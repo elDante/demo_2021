@@ -1,0 +1,6 @@
+---
+# skip_docker_py: true
+# skip_docker_compose: true
+docker_swarm_interface: enp0s8
+ansible_python_interpreter: /usr/bin/python3
+mongodb_replica_set: rs0

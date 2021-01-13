@@ -1,0 +1,79 @@
+---
+- name: Install python packages
+  pip: 
+    name: 
+      - jsondiff 
+      - pymongo
+    state: present
+
+- name: Create temp dir
+  file:
+    path: /tmp/docker_compose
+    state: directory
+
+- name: Generate replica key && root password
+  set_fact:
+    mongodb_replica_key: "{{ lookup('password', './secrets/mongodb_replica_key chars=ascii_lowercase,digits length=14') }}"
+    mongodb_root_password: "{{ lookup('password', './secrets/mongodb_root_password chars=ascii_lowercase,digits length=14') }}"
+
+- name: Place compose
+  template: 
+    src: "{{ item }}.tpl"
+    dest: "/tmp/docker_compose/{{ item }}"
+  with_items:
+    - router.yaml
+    - config.yaml
+    - shard.yaml
+
+- name: Run mongodb-cluster
+  community.docker.docker_stack:
+    name: mongodbcluster
+    state: present
+    prune: yes
+    compose: 
+      - /tmp/docker_compose/router.yaml
+      - /tmp/docker_compose/config.yaml
+      - /tmp/docker_compose/shard.yaml
+
+- name: Wait for mongodb up
+  wait_for:
+    port: 27017
+    delay: 10
+
+- name: Got database info from mongodb cluster
+  community.mongodb.mongodb_info:
+    login_host: "127.0.0.1"
+    login_user: root
+    login_password: "{{ mongodb_root_password }}"
+    filter: databases
+  register: result
+
+- name: Check databases exists
+  assert:
+    that: "'{{ item }}' in result.databases"
+    fail_msg: "`{{ item }}` database not in mongodb cluster"
+    success_msg: "`{{ item }}` database in mongodb cluster"
+  with_items:
+    - admin
+    - config
+
+- name: Wait for resharding
+  wait_for:
+    port: 27017
+    delay: 120
+
+- name: Got database info from mongodb cluster
+  community.mongodb.mongodb_info:
+    login_host: "127.0.0.1"
+    login_user: root
+    login_password: "{{ mongodb_root_password }}"
+    filter: databases
+  register: result_for_shards
+
+- name: Check active shards
+  assert:
+    that:
+      - "'shard{{ item }}' in result_for_shards.databases.config.shards"
+    fail_msg: "`shard{{ item }}` not in config database shards"
+    success_msg: "`shard{{ item }}` in config database shards"
+  loop: "{{ range(mongodb_shard_count)|list }}"

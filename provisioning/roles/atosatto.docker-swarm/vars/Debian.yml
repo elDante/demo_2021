@@ -1,0 +1,11 @@
+---
+
+python_pip_packages:
+  - python3-pip
+
+python_sni_support_packages:
+  - python3-dev
+  - libssl3-dev
+  - libffi3-dev
+
+default_docker_dependencies: []
